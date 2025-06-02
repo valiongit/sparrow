@@ -2,7 +2,49 @@ import configparser
 import os
 from typing import Dict, Any, Optional, List
 import json
+import logging
 
+logger = logging.getLogger(__name__)
+
+class AppConfig:
+    _instance = None
+
+    def __new__(cls, config_file="llm/config.properties"):
+        if cls._instance is None:
+            cls._instance = super(AppConfig, cls).__new__(cls)
+            cls._instance.config = configparser.ConfigParser()
+            cls._instance.config_file = config_file
+            if not os.path.exists(config_file):
+                logger.warning(f"Config file {config_file} not found. Using defaults or environment variables only.")
+                # Initialize with empty dict if file not found, so .get calls don't fail on self.config
+                cls._instance.config.read_dict({})
+            else:
+                cls._instance.config.read(config_file)
+                logger.info(f"Loaded configuration from {config_file}")
+        return cls._instance
+
+    def get_config_value(self, section: str, key: str, default: str = None) -> str:
+        # Priority:
+        # 1. Environment variable (SPARROW_LLM_INFERENCE_BACKEND_CONFIG for this specific key)
+        # 2. Config file
+        # 3. Default value
+
+        if section == "llm_engine" and key == "inference_backend":
+            env_var_value = os.environ.get("SPARROW_LLM_INFERENCE_BACKEND_CONFIG")
+            if env_var_value:
+                logger.info(f"Using '{key}' from environment variable SPARROW_LLM_INFERENCE_BACKEND_CONFIG: {env_var_value}")
+                return env_var_value
+        
+        try:
+            value = self.config.get(section, key)
+            logger.debug(f"Using '{key}' from config file [{section}]: {value}")
+            return value
+        except (configparser.NoSectionError, configparser.NoOptionError):
+            if default is not None:
+                logger.debug(f"Using default value for '{key}' in section '{section}': {default}")
+                return default
+            logger.warning(f"Config value for section '{section}', key '{key}' not found and no default provided.")
+            return None
 
 class SparrowConfig:
     """
